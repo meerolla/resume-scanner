@@ -95,7 +95,7 @@ if resume_texts and job_description:
         if match_scores:
             results_df = pd.DataFrame(match_scores.items(), columns=["Resume", "Match Score"]).sort_values(by="Match Score", ascending=False)
             st.success("✅ Processing Complete!")
-            import ace_tools as tools; tools.display_dataframe_to_user(name="Resume Match Results", dataframe=results_df)
+            st.dataframe(results_df)
 
             csv_data = results_df.to_csv(index=False)
             st.download_button(label="📥 Download Shortlist", data=csv_data, file_name="shortlisted_resumes.csv", mime="text/csv")
