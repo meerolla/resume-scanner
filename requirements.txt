@@ -1,0 +1,11 @@
+streamlit
+langchain
+openai
+faiss-cpu
+sentence-transformers
+python-docx
+pymupdf
+pandas
+python-dotenv
+scikit-learn
+
