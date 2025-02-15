@@ -3,8 +3,9 @@ import fitz  # PyMuPDF for PDF parsing
 import docx
 import os
 import pandas as pd
+import zipfile
+import tempfile
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
 from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 
@@ -13,28 +14,36 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Function to extract text from PDF
-def extract_text_from_pdf(pdf_path):
-    doc = fitz.open(pdf_path)
-    text = "".join([page.get_text("text") + "\n" for page in doc])
-    return text.strip()
+def extract_text_from_pdf(file):
+    doc = fitz.open(stream=file.read(), filetype="pdf")
+    return "".join([page.get_text("text") + "\n" for page in doc]).strip()
 
 # Function to extract text from DOCX
-def extract_text_from_docx(docx_path):
-    doc = docx.Document(docx_path)
+def extract_text_from_docx(file):
+    doc = docx.Document(file)
     return "\n".join([para.text for para in doc.paragraphs]).strip()
 
-# Function to process resumes in a folder
-def process_resumes(folder_path):
+# Function to extract resumes from a ZIP file
+def extract_resumes_from_zip(zip_file):
+    temp_dir = tempfile.mkdtemp()
+    with zipfile.ZipFile(zip_file, "r") as zip_ref:
+        zip_ref.extractall(temp_dir)
+    
     resume_texts = {}
-    for filename in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, filename)
-        if filename.lower().endswith(".pdf"):
-            resume_texts[filename] = extract_text_from_pdf(file_path)
-        elif filename.lower().endswith(".docx"):
-            resume_texts[filename] = extract_text_from_docx(file_path)
+    for root, _, files in os.walk(temp_dir):
+        for file in files:
+            file_path = os.path.join(root, file)
+            file_extension = file.split(".")[-1].lower()
+            
+            with open(file_path, "rb") as f:
+                if file_extension == "pdf":
+                    resume_texts[file] = extract_text_from_pdf(f)
+                elif file_extension == "docx":
+                    resume_texts[file] = extract_text_from_docx(f)
+    
     return resume_texts
 
-# Function to compute similarity scores
+# Function to calculate similarity
 def calculate_similarity(resume_texts, jd_text):
     if not jd_text or not resume_texts:
         return {}
@@ -49,29 +58,49 @@ def calculate_similarity(resume_texts, jd_text):
     return scores
 
 # Streamlit UI
-st.title("📂 Bulk Resume Scanner with LangChain & AI")
-st.write("Upload resumes in a folder and enter a Job Description to find the best matches.")
+st.title("📂 AI Resume Scanner with Folder Upload Support")
+st.write("Upload multiple resumes or a ZIP folder and enter a Job Description to find the best matches.")
 
-folder_path = st.text_input("Enter Resume Folder Path", value="resumes/")
-job_description = st.text_area("Paste the Job Description (JD)")
+# Upload multiple resumes manually
+uploaded_files = st.file_uploader("📤 Upload Resumes (PDF or DOCX)", type=["pdf", "docx"], accept_multiple_files=True)
 
-if st.button("Process Resumes"):
-    if not os.path.exists(folder_path):
-        st.error("❌ Invalid folder path! Please check and try again.")
-    else:
-        with st.spinner("Processing resumes..."):
-            resume_texts = process_resumes(folder_path)
-            match_scores = calculate_similarity(resume_texts, job_description)
+# Upload a ZIP folder containing multiple resumes
+uploaded_zip = st.file_uploader("📦 Upload a ZIP folder containing resumes", type=["zip"])
 
-            if match_scores:
-                results_df = pd.DataFrame(match_scores.items(), columns=["Resume", "Match Score"]).sort_values(by="Match Score", ascending=False)
-                st.success("✅ Processing Complete!")
-                import ace_tools as tools; tools.display_dataframe_to_user(name="Resume Match Results", dataframe=results_df)
+job_description = st.text_area("📌 Paste the Job Description (JD)")
 
-                csv_data = results_df.to_csv(index=False)
-                st.download_button(label="📥 Download Shortlist", data=csv_data, file_name="shortlisted_resumes.csv", mime="text/csv")
-            else:
-                st.warning("⚠️ No valid resumes found in the folder!")
+# Process uploaded files
+resume_texts = {}
 
-st.sidebar.write("📌 Ensure your resumes are in PDF or DOCX format inside the folder.")
+if uploaded_files:
+    with st.spinner("Processing uploaded resumes..."):
+        for uploaded_file in uploaded_files:
+            file_name = uploaded_file.name
+            file_extension = file_name.split(".")[-1].lower()
+
+            if file_extension == "pdf":
+                resume_texts[file_name] = extract_text_from_pdf(uploaded_file)
+            elif file_extension == "docx":
+                resume_texts[file_name] = extract_text_from_docx(uploaded_file)
+
+elif uploaded_zip:
+    with st.spinner("Extracting resumes from ZIP file..."):
+        resume_texts = extract_resumes_from_zip(uploaded_zip)
+
+# Compute similarity
+if resume_texts and job_description:
+    with st.spinner("Matching resumes..."):
+        match_scores = calculate_similarity(resume_texts, job_description)
+
+        if match_scores:
+            results_df = pd.DataFrame(match_scores.items(), columns=["Resume", "Match Score"]).sort_values(by="Match Score", ascending=False)
+            st.success("✅ Processing Complete!")
+            import ace_tools as tools; tools.display_dataframe_to_user(name="Resume Match Results", dataframe=results_df)
+
+            csv_data = results_df.to_csv(index=False)
+            st.download_button(label="📥 Download Shortlist", data=csv_data, file_name="shortlisted_resumes.csv", mime="text/csv")
+        else:
+            st.warning("⚠️ No valid resumes found!")
+
+st.sidebar.write("📌 Upload resumes in **PDF or DOCX format** or as a **ZIP folder** containing multiple resumes.")
 
