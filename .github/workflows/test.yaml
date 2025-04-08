@@ -1,0 +1,38 @@
+name: Resume Scanner - CI
+
+on:
+  push:
+    branches: [ main, feature/** ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Check for .env tracking
+      run: |
+        if [ -f .env ]; then
+          echo "ERROR: .env file should not be tracked by Git!"
+          exit 1
+        else
+          echo ".env is safely ignored."
+        fi
+
+    - name: Syntax Check
+      run: |
+        python -m py_compile app.py
