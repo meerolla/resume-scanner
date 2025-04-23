@@ -8,5 +8,5 @@ pymupdf
 pandas
 python-dotenv
 scikit-learn
-longchain-community
+langchain-community
 tiktoken
